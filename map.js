@@ -217,7 +217,7 @@ $(document).ready(function() {
     lookupGeo(geoPlaces, function(geoPlaces, map) {
 	drawRoutes(geoPlaces, map);
 	centerMap(geoPlaces, map);
-	setTimeout(function() {maybeCenterMapOnUrlParam(map)}, 3000);
+	setTimeout(function() {maybeCenterMapOnUrlParam(map)}, 1000);
     });
 });
 
