@@ -49,25 +49,34 @@ $(document).ready(function() {
 
     function drawRoutes(geoPlaces, map) {
 	var path = [];
+	var markers = [];
 	$.each(geoPlaces, function(i, gp) {
 	    var latLong = latLongPlaceMap[gp.place];
 	    path.push(latLong);
 
+	    var markerOptions = {map: map, position: latLong, animation: google.maps.Animation.DROP};
+	    markers.push(markerOptions);
+	    var infoWindowText = formatInfoWindowText(gp);
+	    var infoWindow = new google.maps.InfoWindow({content: infoWindowText, disableAutoPan: true});
+	    infoWindows.push(infoWindow);
+	});
+	animateMarkers(infoWindows, markers);
+	var polyline = new google.maps.Polyline({path: path, map: map, geodesic: true, strokeColor: 'grey'});	
+    };
+
+    function animateMarkers(infoWindows, markers) {
+	$.each(markers, function(i, markerOptions) {
+	    var markerTimeout = markers.length * 200 - (i * 200);
 	    setTimeout(function() {
-		var markerOptions = {map: map, position: latLong, animation: google.maps.Animation.DROP};
-		var marker = new google.maps.Marker(markerOptions);
-		var infoWindowText = formatInfoWindowText(gp);
-		var infoWindow = new google.maps.InfoWindow({content: infoWindowText, disableAutoPan: true});
-		infoWindows.push(infoWindow);
+		var marker = new google.maps.Marker(markerOptions);		
 		google.maps.event.addListener(marker, 'click', function () {
 		    $.each(infoWindows, function(i, w) {
 			w.close();
 		    });
                     infoWindow.open(map, marker);
 		});
-	    }, geoPlaces.length * 200 - (i * 200));
+	    }, markerTimeout);
 	});
-	var polyline = new google.maps.Polyline({path: path, map: map, geodesic: true, strokeColor: 'grey'});	
     };
 
     function nullMapCount(map) {
