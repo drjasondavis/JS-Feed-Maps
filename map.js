@@ -17,8 +17,7 @@ $(document).ready(function() {
 	    latLongPlaceMap[gp.place] = null;
 	});
 	$.each(latLongPlaceMap, function(place, location) {
-	    var g = new google.maps.Geocoder();
-	    g.geocode({address: place}, function(geocoderResult) {
+	    geoCoder.geocode({address: place}, function(geocoderResult) {
 		addLatLongPlace(place, geocoderResult, callback);
 	    });
 	});
@@ -26,11 +25,12 @@ $(document).ready(function() {
 
     function addLatLongPlace(geoPlaceRequestName, geocoderResult, callback) {
 	if (geocoderResult.length == 0) {
-	    console.log("No matches found for location: " + geoPlaceRequestName);
+	    //console.log("No matches found for location: " + geoPlaceRequestName);
 	    return;
 	}
 	latLongPlaceMap[geoPlaceRequestName] = geocoderResult[0].geometry.location;
-	canonicalPlaceNames[geoPlaceRequestName] = geocoderResult[0].formatted_address;
+	var formattedAddress = geocoderResult[0].formatted_address;
+	canonicalPlaceNames[geoPlaceRequestName] = formattedAddress;
 	if (nullMapCount(latLongPlaceMap) == 0) {
 	    callback(geoPlaces, map);
 	}
@@ -111,7 +111,6 @@ $(document).ready(function() {
 	
 
     function centerMap(geoPlaces, map) {
-
 	var splitLong = -20; 
 	var overRunPerc = 0.0;
 	function mapLong(l) {
@@ -184,18 +183,41 @@ $(document).ready(function() {
 	});
 	return geoPlaces;
     };
+    
+    function getURLParameter(name) {
+	p = decodeURI(
+            (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+	);
+	if (p === "null") {
+	    return null;
+	}
+	return p;
+    };
+
+    function maybeCenterMapOnUrlParam(map) {
+	var center = getURLParameter('q');
+	if (center == null) {
+	    return false;
+	}
+	geoCoder.geocode({address: center}, function(gr, status) {
+	    map.setCenter(gr[0].geometry.location);
+	    map.setZoom(6);
+	});
+	return true;
+    }
 
     var markersRendered = false;
     var infoWindows = [];
     latLongPlaceMap = {};
     var canonicalPlaceNames = {};
     var geoPlaces = extractTumblrLocations();
-
+    var geoCoder = new google.maps.Geocoder();
     var map = createMap(40.7, -74);
 
     lookupGeo(geoPlaces, function(geoPlaces, map) {
 	drawRoutes(geoPlaces, map);
 	centerMap(geoPlaces, map);
+	setTimeout(function() {maybeCenterMapOnUrlParam(map)}, 3000);
     });
 });
 
