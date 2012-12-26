@@ -1,0 +1,179 @@
+$(document).ready(function() {
+    
+    function createMap(lat, long) {
+        var mapOptions = {
+	    center: new google.maps.LatLng(lat, long),
+            zoom: 10,
+	    scrollwheel: false, 
+            mapTypeId: google.maps.MapTypeId.ROADMAP
+        };
+        var map = new google.maps.Map(document.getElementById("map_canvas"),
+				      mapOptions);
+	return map;
+    };
+
+    function lookupGeo(geoPlaces, callback) {
+	$.each(geoPlaces, function(i, gp) {
+	    latLongPlaceMap[gp.place] = null;
+	});
+	$.each(latLongPlaceMap, function(place, location) {
+	    var g = new google.maps.Geocoder();
+	    g.geocode({address: place}, function(geocoderResult) {
+		addLatLongPlace(place, geocoderResult, callback);
+	    });
+	});
+    };
+
+    function addLatLongPlace(geoPlaceRequestName, geocoderResult, callback) {
+	if (geocoderResult.length == 0) {
+	    console.log("No matches found for location: " + geoPlaceRequestName);
+	    return;
+	}
+	latLongPlaceMap[geoPlaceRequestName] = geocoderResult[0].geometry.location;
+	canonicalPlaceNames[geoPlaceRequestName] = geocoderResult[0].formatted_address;
+	if (nullMapCount(latLongPlaceMap) == 0) {
+	    callback(geoPlaces, map);
+	}
+    };
+
+    function formatInfoWindowText(gp) {
+	var canonPlace = canonicalPlaceNames[gp.place];
+	var postDate = new Date(gp.time * 1000);
+	title = gp.title;
+	if (typeof title === "undefined") {
+	    title = gp.place;
+	}
+	return "<div class='maps-info-window'><a target='_blank' href=" + gp.url + ">" + title + "</a><br/><i>" 
+	    + dateFormat(postDate, "dddd, mmmm dS, yyyy") + "<br/>" + canonPlace + "</i></div>";
+    };
+
+    function drawRoutes(geoPlaces, map) {
+	var path = [];
+	$.each(geoPlaces, function(i, gp) {
+	    var latLong = latLongPlaceMap[gp.place];
+	    path.push(latLong);
+
+	    setTimeout(function() {
+		var markerOptions = {map: map, position: latLong, animation: google.maps.Animation.DROP};
+		var marker = new google.maps.Marker(markerOptions);
+		var infoWindowText = formatInfoWindowText(gp);
+		var infoWindow = new google.maps.InfoWindow({content: infoWindowText, disableAutoPan: true});
+		infoWindows.push(infoWindow);
+		google.maps.event.addListener(marker, 'click', function () {
+		    $.each(infoWindows, function(i, w) {
+			w.close();
+		    });
+                    infoWindow.open(map, marker);
+		});
+	    }, geoPlaces.length * 200 - (i * 200));
+	});
+	var polyline = new google.maps.Polyline({path: path, map: map, geodesic: true, strokeColor: 'grey'});	
+    };
+
+    function nullMapCount(map) {
+	var c = 0;
+	$.each(map, function(k, v) {
+	    if (v == null) {
+		c += 1;
+	    }
+	});
+	return c;
+    };
+
+    Array.prototype.max = function() {
+	return Math.max.apply({}, this);
+    };
+    
+    Array.prototype.min = function() {
+	return Math.min.apply({}, this);
+    };
+	
+
+    function centerMap(geoPlaces, map) {
+
+	var splitLong = -20; 
+	var overRunPerc = 0.0;
+	function mapLong(l) {
+	    if (l < 0) {
+		l = 360 + l;
+	    }
+	    return (l - splitLong) % 360;
+	};
+
+	function unmapLong(l) {
+	    l = (l + splitLong) % 360;
+	    if (l > 180) {
+		l = l - 360;
+	    }
+	    return l;
+	};
+
+	var adjustedLongs = Array();
+	var lats = Array();
+	$.each(geoPlaces, function(i, gp) {
+	    var latLong = latLongPlaceMap[gp.place];
+	    var lat = latLong.Ya;
+	    var long = latLong.Za;
+	    adjustedLongs.push(mapLong(long));
+	    lats.push(lat);
+	});
+	var minLong = adjustedLongs.min();
+	var maxLong = adjustedLongs.max();
+	var longRange = maxLong - minLong;
+	var longBorder = longRange * overRunPerc;
+	minLong = unmapLong(minLong - longBorder);
+	maxLong = unmapLong(maxLong + longBorder);
+	var minLat = lats.min();
+	var maxLat = lats.max();
+	var latRange = maxLat - minLat;
+	var latBorder = latRange * overRunPerc;
+	minLat -= latBorder;
+	maxLat += latBorder;
+	var sw = new google.maps.LatLng(minLat, minLong);
+	var ne = new google.maps.LatLng(maxLat, maxLong);
+	
+	varLatLongBounds = new google.maps.LatLngBounds(sw, ne);
+
+	map.fitBounds(varLatLongBounds);
+    };
+
+    function extractTumblrLocations() {
+	var geoPlaces = [];
+	var placeRegex = /place:(.*)$/;
+	$.each(tumblr_api_read.posts, function(i, p) {
+	    var tags = p.tags;
+	    var placeTags = $.map(tags, function(t) {
+		m = placeRegex.exec(t); 
+		if (m && m.length == 2) {
+		    return m[1];
+		} else {
+		    return null;
+		}
+	    });
+	    if (placeTags.length == 0) {
+		return;
+	    }
+	    gp = {
+		place: placeTags[0],
+		time: p['unix-timestamp'],
+		url: p.url,		
+		title: p['regular-title']
+	    };
+	    geoPlaces.push(gp);
+	});
+	return geoPlaces;
+    };
+
+    var infoWindows = [];
+    latLongPlaceMap = {};
+    var canonicalPlaceNames = {};
+    var geoPlaces = extractTumblrLocations();
+
+    var map = createMap(40.7, -74);
+
+    lookupGeo(geoPlaces, function(geoPlaces, map) {
+	drawRoutes(geoPlaces, map);
+	centerMap(geoPlaces, map);
+    });
+});
+
