@@ -60,7 +60,19 @@ $(document).ready(function() {
 	    var infoWindow = new google.maps.InfoWindow({content: infoWindowText, disableAutoPan: true});
 	    infoWindows.push(infoWindow);
 	});
-	animateMarkers(infoWindows, markers);
+	function onMouseOrTouch() {
+	    if (markersRendered) {
+		return;
+	    }
+	    markersRendered = true;
+	    animateMarkers(infoWindows, markers);
+	};
+	$('#map_canvas').on('touchstart', function() {
+	    onMouseOrTouch();
+	});
+	$('#map_canvas').mouseover(function(){
+	    onMouseOrTouch();
+	});
 	var polyline = new google.maps.Polyline({path: path, map: map, geodesic: true, strokeColor: 'grey'});	
     };
 
@@ -73,7 +85,7 @@ $(document).ready(function() {
 		    $.each(infoWindows, function(i, w) {
 			w.close();
 		    });
-                    infoWindow.open(map, marker);
+                    infoWindows[i].open(map, marker);
 		});
 	    }, markerTimeout);
 	});
@@ -173,6 +185,7 @@ $(document).ready(function() {
 	return geoPlaces;
     };
 
+    var markersRendered = false;
     var infoWindows = [];
     latLongPlaceMap = {};
     var canonicalPlaceNames = {};
