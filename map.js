@@ -1,72 +1,99 @@
-$(document).ready(function() {
+function Location(userAddress, geoCoderResult) {
+    this.userAddress = userAddress;
+    this.geoCoderResult = geoCoderResult;
+}
 
-    function createMap(lat, long) {
+Location.prototype = {
+
+    getGeocoderResult: function() {
+	return this.geoCoderResult;
+    },
+
+    prettyFormatLocation: function() {
+	var r = this.geoCoderResult.address_components;	
+	var adminLabel = "";
+	var countryLabel = "";
+	var localityLabel = "";
+	for (var key in r) {
+	    if (r.hasOwnProperty(key)) {
+		if (r[key].types[0] === "administrative_area_level_2") {
+		    adminLabel = r[key].long_name;
+		}
+		if (r[key].types[0] === "country") {
+		    countryLabel = r[key].long_name;
+		}
+		if (r[key].types[0] === "locality") {
+		    localityLabel = r[key].long_name;
+		}
+	    }
+	}
+	    var fullLabel;
+	if (localityLabel != "") {
+	    fullLabel = localityLabel + ", " + countryLabel;
+	} else if (adminLabel != "") {
+	    fullLabel = adminLabel + ", " + countryLabel;
+	} else {
+	    fullLabel = countryLabel;
+	}
+	return fullLabel;
+    }
+};
+
+function GeoDecoder() {
+    this.geocodePlaces = function(addresses, callback) {
+	var successes = 0;
+	var that = this;
+	if( Object.prototype.toString.call(addresses) !== '[object Array]' ) {
+	    addresses = [addresses];
+	}
+	
+	$.each(addresses, function(i, place) {
+	    setTimeout(function() {
+		that.geoCoder.geocode({address: place}, function(geocoderResults, geocoderStatus) {
+		    if (!geocoderResults || geocoderResults.length == 0) {
+			console.log("Could not find location for address: " + place + ", status: " + geocoderStatus);
+			return;
+		    }
+		    that.cacheLocations(place, geocoderResults[0]);
+		    successes += 1;
+		    if (successes == addresses.length) {
+			callback(that.userLocations);
+		    }
+		});
+	    }, 250 * i);
+	});
+    };
+
+    this.cacheLocations = function(address, geocoderResult) {	
+	var loc = new Location(address, geocoderResult);
+	this.userLocations[address] = loc;
+    };
+
+    this.getLatLongForLocation = function(place) {
+	return this.userLocations[place].getGeocoderResult().geometry.location;
+    };
+    
+    this.geoCoder = new google.maps.Geocoder();
+    this.userLocations = {};
+};
+
+function TripMap() {
+
+    this.map = null;
+
+    this.initMap = function(div, lat, long) {
 	var mapOptions = {
 	    center: new google.maps.LatLng(lat, long),
 	    zoom: 10,
 	    scrollwheel: false,
 	    mapTypeId: google.maps.MapTypeId.ROADMAP
 	};
-	var map = new google.maps.Map(document.getElementById("map_canvas"),
+	this.map = new google.maps.Map(document.getElementById(div),
 				      mapOptions);
-	return map;
     };
 
-    function lookupGeo(geoPlaces, callback) {
-	$.each(geoPlaces, function(i, gp) {
-	    latLongPlaceMap[gp.place] = null;
-	});
-	$.each(latLongPlaceMap, function(place, location) {
-	    geoCoder.geocode({address: place}, function(geocoderResult) {
-		addLatLongPlace(place, geocoderResult, callback);
-	    });
-	});
-    };
-
-    function addLatLongPlace(geoPlaceRequestName, geocoderResult, callback) {
-	if (geocoderResult.length == 0) {
-	    //console.log("No matches found for location: " + geoPlaceRequestName);
-	    return;
-	}
-	latLongPlaceMap[geoPlaceRequestName] = geocoderResult[0].geometry.location;
-
-	function formatGeocoderResultName(r) {
-	    var adminLabel = "";
-	    var countryLabel = "";
-	    var localityLabel = "";
-	    for (var key in r) {
-		if (r.hasOwnProperty(key)) {
-		    if (r[key].types[0] === "administrative_area_level_2") {
-			adminLabel = r[key].long_name;
-		    }
-		    if (r[key].types[0] === "country") {
-			countryLabel = r[key].long_name;
-		    }
-		    if (r[key].types[0] === "locality") {
-			localityLabel = r[key].long_name;
-		    }
-		}
-	    }
-	    var fullLabel;
-	    if (localityLabel != "") {
-		fullLabel = localityLabel + ", " + countryLabel;
-	    } else if (adminLabel != "") {
-		fullLabel = adminLabel + ", " + countryLabel;
-	    } else {
-		fullLabel = countryLabel;
-	    }
-	    return fullLabel;
-	};
-
-	var formattedAddress = formatGeocoderResultName(geocoderResult[0].address_components);
-	canonicalPlaceNames[geoPlaceRequestName] = formattedAddress;
-	if (nullMapCount(latLongPlaceMap) == 0) {
-	    callback(geoPlaces, map);
-	}
-    };
-
-    function formatInfoWindowText(gp) {
-	var canonPlace = canonicalPlaceNames[gp.place];
+    this.formatInfoWindowText = function(gp) {
+	var canonPlace = this.geoCoder.userLocations[gp.place].prettyFormatLocation();
 	var postDate = new Date(gp.time * 1000);
 	title = gp.title;
 	if (typeof title === "undefined") {
@@ -75,71 +102,16 @@ $(document).ready(function() {
 	return "<div class='maps-info-window'><a target='_blank' href=" + gp.url + ">" + title + "</a><br/><i>"
 	    + dateFormat(postDate, "dddd, mmmm dS, yyyy") + "<br/>" + canonPlace + "</i></div>";
     };
-
-    function drawRoutes(geoPlaces, map) {
-	var path = [];
-	var markers = [];
-	$.each(geoPlaces, function(i, gp) {
-	    var latLong = latLongPlaceMap[gp.place];
-	    path.push(latLong);
-
-	    var markerOptions = {map: map, position: latLong, animation: google.maps.Animation.DROP};
-	    markers.push(markerOptions);
-	    var infoWindowText = formatInfoWindowText(gp);
-	    var infoWindow = new google.maps.InfoWindow({content: infoWindowText, disableAutoPan: true});
-	    infoWindows.push(infoWindow);
-	});
-	function onMouseOrTouch() {
-	    if (markersRendered) {
-		return;
-	    }
-	    markersRendered = true;
-	    animateMarkers(infoWindows, markers);
+    
+    this.center = function(geoPlaces) {
+	Array.prototype.max = function() {
+	    return Math.max.apply({}, this);
 	};
-	$('#map_canvas').on('touchstart', function() {
-	    onMouseOrTouch();
-	});
-	$('#map_canvas').mouseover(function(){
-	    onMouseOrTouch();
-	});
-	var polyline = new google.maps.Polyline({path: path, map: map, geodesic: true, strokeColor: 'grey'});
-    };
+	
+	Array.prototype.min = function() {
+	    return Math.min.apply({}, this);
+	};
 
-    function animateMarkers(infoWindows, markers) {
-	$.each(markers, function(i, markerOptions) {
-	    var markerTimeout = markers.length * 200 - (i * 200);
-	    setTimeout(function() {
-		var marker = new google.maps.Marker(markerOptions);
-		google.maps.event.addListener(marker, 'click', function () {
-		    $.each(infoWindows, function(i, w) {
-			w.close();
-		    });
-		    infoWindows[i].open(map, marker);
-		});
-	    }, markerTimeout);
-	});
-    };
-
-    function nullMapCount(map) {
-	var c = 0;
-	$.each(map, function(k, v) {
-	    if (v == null) {
-		c += 1;
-	    }
-	});
-	return c;
-    };
-
-    Array.prototype.max = function() {
-	return Math.max.apply({}, this);
-    };
-
-    Array.prototype.min = function() {
-	return Math.min.apply({}, this);
-    };
-
-
-    function centerMap(geoPlaces, map) {
 	var splitLong = -20;
 	var overRunPerc = 0.0;
 	function mapLong(l) {
@@ -159,8 +131,9 @@ $(document).ready(function() {
 
 	var adjustedLongs = Array();
 	var lats = Array();
+	var that = this;
 	$.each(geoPlaces, function(i, gp) {
-	    var latLong = latLongPlaceMap[gp.place];
+	    var latLong = that.geoCoder.getLatLongForLocation(gp.place);
 	    var lat = latLong.Ya;
 	    var long = latLong.Za;
 	    adjustedLongs.push(mapLong(long));
@@ -180,13 +153,114 @@ $(document).ready(function() {
 	maxLat += latBorder;
 	var sw = new google.maps.LatLng(minLat, minLong);
 	var ne = new google.maps.LatLng(maxLat, maxLong);
-
 	varLatLongBounds = new google.maps.LatLngBounds(sw, ne);
 
-	map.fitBounds(varLatLongBounds);
+	this.map.fitBounds(varLatLongBounds);
     };
 
-    function extractTumblrLocations() {
+
+
+    this.drawRoute = function(places) {
+	var that = this;
+	p = places;
+	var addresses = $.map(places, function(p) { return p.place; });
+	this.geoCoder.geocodePlaces(addresses, function() {
+	    var path = [];
+	    $.each(places, function(i, gp) {
+		var latLong = that.geoCoder.getLatLongForLocation(gp.place);
+		path.push(latLong);
+		
+		var markerOptions = {map: that.map, 
+				     position: latLong, 
+				     animation: google.maps.Animation.DROP};
+		that.markers.push(markerOptions);
+		var infoWindowText = that.formatInfoWindowText(gp);
+		var infoWindow = new google.maps.InfoWindow({content: infoWindowText, 
+							     disableAutoPan: true});
+		that.infoWindows.push(infoWindow);
+	    });
+	    var polyline = new google.maps.Polyline({path: path, 
+						     map: that.map, 
+						     geodesic: true, 
+						     strokeColor: 'grey'});
+	    that.center(places);
+	    setTimeout(function() {that.maybeCenterMapOnUrlParam()}, 1000);
+	});
+    };
+
+    this.dropPinsAndAnimate = function(callback) {	
+	var timeBetweenPins = 200;
+	var that = this;
+	function doCallback() {
+	    if (callback) {
+		var time = that.markers.length * timeBetweenPins + 500;
+		setTimeout(callback, time);
+	    }
+	};
+
+	if (this.markersRendered) {
+	    doCallback();
+	    return;
+	}
+	this.markersRendered = true;
+	$.each(this.markers, function(i, markerOptions) {
+	    var markerTimeout = that.markers.length * timeBetweenPins - (i * timeBetweenPins);
+	    setTimeout(function() {
+		var marker = new google.maps.Marker(markerOptions);
+		google.maps.event.addListener(marker, 'click', function () {
+		    $.each(that.infoWindows, function(i, w) {
+			w.close();
+		    });
+		    that.infoWindows[i].open(that.map, marker);
+		});
+	    }, markerTimeout);
+	});
+	doCallback();
+    };
+
+    this.maybeCenterMapOnUrlParam = function() {
+	function getURLParameter(name) {
+	    p = decodeURI(
+		(RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
+	    );
+	    if (p === "null") {
+		return null;
+	    }
+	    return p;
+	};
+	var center = getURLParameter('q');
+	if (center == null) {
+	    return;
+	}
+	var that = this;
+	this.dropPinsAndAnimate(function() {
+	    that.geoCoder.geocodePlaces(center, function(locations) {
+		var loc = that.geoCoder.getLatLongForLocation(center);
+		that.map.setCenter(loc);
+		that.map.setZoom(6);
+	    });
+	});
+    };
+
+
+    this.mapDiv = 'map_canvas';
+    this.mapCenter = 'New York, NY';
+    this.geoCoder = new GeoDecoder();
+    this.markersRendered = false;
+    this.markers = [];
+    this.infoWindows = [];
+    var that = this;
+
+    this.geoCoder.geocodePlaces(this.mapCenter, function(locations) {
+	loc = locations[that.mapCenter];	
+	var lat = loc.geoCoderResult.geometry.location.lat();
+	var long = loc.geoCoderResult.geometry.location.lng();
+	that.initMap(that.mapDiv, lat, long);
+    });
+};
+
+function TumblrLocations() {
+    this.extract = function() {
 	var geoPlaces = [];
 	var placeRegex = /place:(.*)$/;
 	$.each(tumblr_api_read.posts, function(i, p) {
@@ -210,42 +284,25 @@ $(document).ready(function() {
 	    };
 	    geoPlaces.push(gp);
 	});
-	return geoPlaces;
+	this.locations = geoPlaces;
     };
 
-    function getURLParameter(name) {
-	p = decodeURI(
-	    (RegExp(name + '=' + '(.+?)(&|$)').exec(location.search)||[,null])[1]
-	);
-	if (p === "null") {
-	    return null;
-	}
-	return p;
-    };
+    this.locations = null;
+    this.extract();
+};
 
-    function maybeCenterMapOnUrlParam(map) {
-	var center = getURLParameter('q');
-	if (center == null) {
-	    return false;
-	}
-	geoCoder.geocode({address: center}, function(gr, status) {
-	    map.setCenter(gr[0].geometry.location);
-	    map.setZoom(6);
-	});
-	return true;
-    }
 
-    var markersRendered = false;
-    var infoWindows = [];
-    latLongPlaceMap = {};
-    var canonicalPlaceNames = {};
-    var geoPlaces = extractTumblrLocations();
-    var geoCoder = new google.maps.Geocoder();
-    var map = createMap(40.7, -74);
 
-    lookupGeo(geoPlaces, function(geoPlaces, map) {
-	drawRoutes(geoPlaces, map);
-	centerMap(geoPlaces, map);
-	setTimeout(function() {maybeCenterMapOnUrlParam(map)}, 1000);
+$(document).ready(function() {
+    var tumblrLocations = new TumblrLocations();
+    var geoPlaces = tumblrLocations.locations;
+    var tripMap = new TripMap();
+    tripMap.drawRoute(geoPlaces);
+    
+    $('#map_canvas').on('touchstart', function() {
+	tripMap.dropPinsAndAnimate();
+    });
+    $('#map_canvas').mouseover(function(){
+	tripMap.dropPinsAndAnimate();
     });
 });
