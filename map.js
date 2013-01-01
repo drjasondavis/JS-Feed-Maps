@@ -72,12 +72,12 @@ function GeoDecoder() {
     this.getLatLongForLocation = function(place) {
 	return this.userLocations[place].getGeocoderResult().geometry.location;
     };
-    
+
     this.geoCoder = new google.maps.Geocoder();
     this.userLocations = {};
 };
 
-function TripMap() {
+function TripMap(homeLocation, mapDiv) {
 
     this.map = null;
 
@@ -243,8 +243,8 @@ function TripMap() {
     };
 
 
-    this.mapDiv = 'map_canvas';
-    this.mapCenter = 'New York, NY';
+    this.mapDiv = mapDiv;
+    this.mapCenter = homeLocation;
     this.geoCoder = new GeoDecoder();
     this.markersRendered = false;
     this.markers = [];
@@ -292,17 +292,40 @@ function TumblrLocations() {
 };
 
 
+function loadDependencies(callback) {
+    var scripts = ["http://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js",
+		   "http://stevenlevithan.com/assets/misc/date.format.js"];
+    scripts.push("http://" + tumblrBlogName + ".tumblr.com/api/read/json?num=50");
+    scripts.push("http://maps.googleapis.com/maps/api/js?key=" + googleMapsKey + "&sensor=false");
 
-$(document).ready(function() {
-    var tumblrLocations = new TumblrLocations();
-    var geoPlaces = tumblrLocations.locations;
-    var tripMap = new TripMap();
-    tripMap.drawRoute(geoPlaces);
-    
-    $('#map_canvas').on('touchstart', function() {
-	tripMap.dropPinsAndAnimate();
-    });
-    $('#map_canvas').mouseover(function(){
-	tripMap.dropPinsAndAnimate();
+    function loadSingleScript(index) {
+	if (index >= scripts.length) {
+	    callback();
+	    return;
+	}
+	var s = scripts[index];
+	console.log(index + ": " + s);
+	var scriptElement = document.createElement('script');
+	scriptElement.setAttribute("type","text/javascript");
+	scriptElement.setAttribute("src", s);
+	document.getElementsByTagName("head")[0].appendChild(scriptElement);
+	scriptElement.onload = function(i) { loadSingleScript(index + 1); };
+    }
+    loadSingleScript(0);
+};
+
+loadDependencies(function() {
+    $(document).ready(function() {
+	var tumblrLocations = new TumblrLocations();
+	var geoPlaces = tumblrLocations.locations;
+	var tripMap = new TripMap(homeLocation, mapDiv);
+	tripMap.drawRoute(geoPlaces);
+	
+	$('#map_canvas').on('touchstart', function() {
+	    tripMap.dropPinsAndAnimate();
+	});
+	$('#map_canvas').mouseover(function(){
+	    tripMap.dropPinsAndAnimate();
+	});
     });
 });
